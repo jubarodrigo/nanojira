@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nanojira
+      POSTGRES_PASSWORD: nanojira
+      POSTGRES_DB: nanojira
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nanojira -d nanojira"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://nanojira:nanojira@postgres:5432/nanojira?sslmode=disable
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SMTP_FROM: nanojira@localhost
+      SERVER_PORT: "8080"
+      LOG_LEVEL: info
+      MIGRATIONS_DIR: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+
+volumes:
+  postgres_data:
