@@ -1,45 +1,45 @@
 # Nanojira — Task Management API
 
-Backend de gestão de tarefas para times de operações, desenvolvido como take-home assessment. Inspirado em um Jira simplificado: managers criam e atribuem trabalho; workers executam e atualizam o status; atribuições disparam e-mail real.
+Task management backend for operations teams, built as a take-home assessment. Inspired by a simplified Jira: managers create and assign work; workers execute and update status; assignments trigger real email notifications.
 
 ## Stack
 
 - **Go 1.25** + **Gin** (HTTP)
-- **PostgreSQL** (persistência)
-- **Mailpit** (SMTP local para e-mails de atribuição)
-- **Zap** (logging estruturado)
-- **mockgen** (mocks para testes unitários)
+- **PostgreSQL** (persistence)
+- **Mailpit** (local SMTP for assignment emails)
+- **Zap** (structured logging)
+- **mockgen** (mocks for unit tests)
 
-## Arquitetura
+## Architecture
 
 ```
-cmd/api/          → entrypoint, wiring de dependências
+cmd/api/          → entrypoint, dependency wiring
 internal/
-  domain/         → entidades, regras de workflow, erros de domínio
-  handler/        → camada HTTP (Gin)
-  service/        → casos de uso (um arquivo por operação)
-  repository/     → interfaces + implementação Postgres
-  email/          → envio SMTP
-  config/         → variáveis de ambiente
-migrations/       → schema versionado com [goose](https://github.com/pressly/goose) (uma migration por tabela)
-mocks/            → gerados via mockgen
+  domain/         → entities, workflow rules, domain errors
+  handler/        → HTTP layer (Gin)
+  service/        → use cases (one file per operation)
+  repository/     → interfaces + Postgres implementation
+  email/          → SMTP delivery
+  config/         → environment variables
+migrations/       → versioned schema with [goose](https://github.com/pressly/goose) (one migration per table)
+mocks/            → generated via mockgen
 ```
 
-Padrões aplicados: interfaces, injeção de dependência, separação handler → service → repository, erros com wrap (`fmt.Errorf("context: %w", err)`), respostas de API com `code` + `message` para o cliente explicar falhas ao usuário.
+Patterns applied: interfaces, dependency injection, handler → service → repository separation, wrapped errors (`fmt.Errorf("context: %w", err)`), API responses with `code` + `message` so clients can explain failures to users.
 
-## Executar com Docker (recomendado)
+## Run with Docker (recommended)
 
 ```bash
 docker compose up --build
 ```
 
-Serviços:
+Services:
 
-| Serviço   | URL                        |
-|-----------|----------------------------|
-| API       | http://localhost:8080      |
-| Mailpit UI| http://localhost:8025      |
-| Postgres  | localhost:5432             |
+| Service    | URL                        |
+|------------|----------------------------|
+| API        | http://localhost:8080      |
+| Mailpit UI | http://localhost:8025      |
+| Postgres   | localhost:5432             |
 
 Health check:
 
@@ -47,61 +47,61 @@ Health check:
 curl http://localhost:8080/health
 ```
 
-## Executar localmente (sem Docker na API)
+## Run locally (API without Docker)
 
 ```bash
-# Subir dependências
+# Start dependencies
 docker compose up -d postgres mailpit
 
-# Variáveis (ou copie .env.example)
+# Environment variables (or copy .env.example)
 export DATABASE_URL=postgres://nanojira:nanojira@localhost:5432/nanojira?sslmode=disable
 export SMTP_HOST=localhost
 export SMTP_PORT=1025
 
 make run
-# ou: go run ./cmd/api
+# or: go run ./cmd/api
 ```
 
-As migrations rodam automaticamente no boot da API via goose. Para executar manualmente:
+Migrations run automatically on API startup via goose. To run them manually:
 
 ```bash
-make migrate-up       # aplicar pendentes
-make migrate-down     # reverter última migration
-make migrate-status   # listar versões aplicadas
+make migrate-up       # apply pending migrations
+make migrate-down     # revert last migration
+make migrate-status   # list applied versions
 ```
 
 ### Migrations (goose)
 
-Cada arquivo em `migrations/` cobre um contexto isolado:
+Each file in `migrations/` covers an isolated context:
 
-| Arquivo | Conteúdo |
-|---------|----------|
-| `00001_enable_pgcrypto.sql` | Extensão para UUIDs |
-| `00002_create_users.sql` | Tabela `users` |
-| `00003_create_tasks.sql` | Tabela `tasks` + índices |
-| `00004_create_assignment_notifications.sql` | Tabela `assignment_notifications` |
-| `00005_create_stepback_requests.sql` | Tabela `stepback_requests` |
-| `00006_seed_users.sql` | Dados iniciais de usuários |
-| `00007_seed_tasks.sql` | Dados iniciais de tarefas |
+| File | Content |
+|------|---------|
+| `00001_enable_pgcrypto.sql` | Extension for UUIDs |
+| `00002_create_users.sql` | `users` table |
+| `00003_create_tasks.sql` | `tasks` table + indexes |
+| `00004_create_assignment_notifications.sql` | `assignment_notifications` table |
+| `00005_create_stepback_requests.sql` | `stepback_requests` table |
+| `00006_seed_users.sql` | Initial user data |
+| `00007_seed_tasks.sql` | Initial task data |
 
-Se o banco já existia com o schema antigo (arquivo único), recrie o volume antes de subir:
+If the database already existed with the old schema (single file), recreate the volume before starting:
 
 ```bash
 docker compose down -v && docker compose up --build
 ```
 
-## Autenticação (simulada)
+## Authentication (simulated)
 
-Contas vêm de outro sistema. Para testes, use o header:
+Accounts come from an external system. For testing, use the header:
 
 ```
-X-User-ID: <uuid-do-usuario>
+X-User-ID: <user-uuid>
 ```
 
-### Usuários seed
+### Seed users
 
-| ID | Nome | E-mail | Papel |
-|----|------|--------|-------|
+| ID | Name | Email | Role |
+|----|------|-------|------|
 | `11111111-1111-1111-1111-111111111101` | Alice Manager | alice.manager@example.com | manager |
 | `11111111-1111-1111-1111-111111111102` | Bob Manager | bob.manager@example.com | manager |
 | `22222222-2222-2222-2222-222222222201` | Carol Worker | carol.worker@example.com | worker |
@@ -110,18 +110,18 @@ X-User-ID: <uuid-do-usuario>
 
 ## API
 
-Base: `/api/v1` — todas as rotas exigem `X-User-ID`.
+Base path: `/api/v1` — all routes require `X-User-ID`.
 
-| Método | Rota | Quem | Descrição |
-|--------|------|------|-----------|
-| GET | `/tasks` | todos | Lista tarefas (manager: todas; worker: só as atribuídas). Query: `status`, `limit`, `offset` |
-| POST | `/tasks` | manager | Cria tarefa (com ou sem `assignee_id`) |
-| GET | `/tasks/:id` | todos | Detalhe da tarefa |
-| PATCH | `/tasks/:id/assign` | manager | Atribui worker → envia e-mail |
-| PATCH | `/tasks/:id/status` | worker / manager | Worker: avança status ou solicita retrocesso. Manager: aprova/rejeita pendência |
-| GET | `/tasks/:id/notifications` | todos | Histórico de notificações de atribuição (rastreabilidade) |
+| Method | Route | Who | Description |
+|--------|-------|-----|-------------|
+| GET | `/tasks` | everyone | List tasks (manager: all; worker: assigned only). Query: `status`, `limit`, `offset` |
+| POST | `/tasks` | manager | Create task (with or without `assignee_id`) |
+| GET | `/tasks/:id` | everyone | Task details |
+| PATCH | `/tasks/:id/assign` | manager | Assign worker → sends email |
+| PATCH | `/tasks/:id/status` | worker / manager | Worker: advance status or request step-back. Manager: approve/reject pending change |
+| GET | `/tasks/:id/notifications` | everyone | Assignment notification history (traceability) |
 
-### Workflow de status
+### Status workflow
 
 ```
 todo → doing → testing → done
@@ -129,12 +129,12 @@ todo → doing → testing → done
        on_hold ←──┘
 ```
 
-- **Forward** (worker): `PATCH /tasks/:id/status` com `{"status":"..."}` — aplica imediatamente.
-- **Backward** (worker): mesmo endpoint com `{"status":"...", "reason":"..."}` — a task **permanece no status atual** e expõe `pending_status_change` até o manager decidir.
-- **Aprovação** (manager): `PATCH /tasks/:id/status` com `{"approve_status_change": true}` — move para o status solicitado; `false` rejeita e mantém o atual.
-- Managers **não** alteram status diretamente; só aprovam ou rejeitam pendências.
+- **Forward** (worker): `PATCH /tasks/:id/status` with `{"status":"..."}` — applied immediately.
+- **Backward** (worker): same endpoint with `{"status":"...", "reason":"..."}` — the task **stays in its current status** and exposes `pending_status_change` until the manager decides.
+- **Approval** (manager): `PATCH /tasks/:id/status` with `{"approve_status_change": true}` — moves to the requested status; `false` rejects and keeps the current status.
+- Managers **do not** change status directly; they only approve or reject pending changes.
 
-Resposta da task com pendência:
+Task response with a pending change:
 
 ```json
 {
@@ -143,129 +143,118 @@ Resposta da task com pendência:
   "pending_status_change": {
     "id": "...",
     "requested_status": "doing",
-    "reason": "Testes falharam na integração",
+    "reason": "Integration tests failed",
     "requested_by_id": "...",
     "requested_at": "..."
   }
 }
 ```
 
-### Cenário de teste manual
+### Manual test scenario
 
 ```bash
-# 1. Manager cria tarefa sem responsável
+# 1. Manager creates task without assignee
 curl -s -X POST http://localhost:8080/api/v1/tasks \
   -H "Content-Type: application/json" \
   -H "X-User-ID: 11111111-1111-1111-1111-111111111101" \
-  -d '{"title":"Revisar runbook","description":"Atualizar procedimento de incidentes"}'
+  -d '{"title":"Review runbook","description":"Update incident response procedure"}'
 
-# 2. Manager atribui a Carol (e-mail em http://localhost:8025)
+# 2. Manager assigns to Carol (email at http://localhost:8025)
 curl -s -X PATCH http://localhost:8080/api/v1/tasks/<TASK_ID>/assign \
   -H "Content-Type: application/json" \
   -H "X-User-ID: 11111111-1111-1111-1111-111111111101" \
   -d '{"assignee_id":"22222222-2222-2222-2222-222222222201"}'
 
-# 3. Carol avança status
+# 3. Carol advances status
 curl -s -X PATCH http://localhost:8080/api/v1/tasks/<TASK_ID>/status \
   -H "Content-Type: application/json" \
   -H "X-User-ID: 22222222-2222-2222-2222-222222222201" \
   -d '{"status":"doing"}'
 
-# 4. Dave solicita retrocesso (testing → doing) — status permanece "testing"
+# 4. Dave requests step-back (testing → doing) — status remains "testing"
 curl -s -X PATCH http://localhost:8080/api/v1/tasks/<TASK_ID>/status \
   -H "Content-Type: application/json" \
   -H "X-User-ID: 22222222-2222-2222-2222-222222222202" \
-  -d '{"status":"doing","reason":"Testes falharam na integração"}'
+  -d '{"status":"doing","reason":"Integration tests failed"}'
 
-# 5. Manager aprova a mudança pendente
+# 5. Manager approves the pending change
 curl -s -X PATCH http://localhost:8080/api/v1/tasks/<TASK_ID>/status \
   -H "Content-Type: application/json" \
   -H "X-User-ID: 11111111-1111-1111-1111-111111111101" \
   -d '{"approve_status_change":true}'
 ```
 
-## Testes
+## Tests
 
 ```bash
 make test          # go test ./...
 make mocks         # go generate (mockgen)
 ```
 
-Testes unitários cobrem: autorização, transições de status, retrocesso pendente, aprovação pelo manager e atribuição com e-mail.
+Unit tests cover: authorization, status transitions, pending step-back, manager approval, and assignment with email.
 
 ## Makefile
 
-| Comando | Ação |
-|---------|------|
-| `make run` | API local |
-| `make docker-up` | Stack completa |
-| `make test` | Testes |
-| `make mocks` | Regenerar mocks |
-| `make migrate-up` | Aplicar migrations (goose) |
-| `make migrate-down` | Reverter última migration |
-| `make migrate-status` | Status das migrations |
+| Command | Action |
+|---------|--------|
+| `make run` | Run API locally |
+| `make docker-up` | Full stack |
+| `make test` | Run tests |
+| `make mocks` | Regenerate mocks |
+| `make migrate-up` | Apply migrations (goose) |
+| `make migrate-down` | Revert last migration |
+| `make migrate-status` | Migration status |
 
 ---
 
-## Reflexões (prompts do assessment)
+## Reflections (assessment prompts)
 
-### 1. Interpretação do cenário e premissas
+### 1. Scenario interpretation and assumptions
 
-- O sistema é a **fonte da verdade** para itens de trabalho: quem criou, quem é responsável, em que etapa está.
-- **Dois papéis**: manager (visão global, criação, atribuição) e worker (fila própria, progresso).
-- Autenticação é externa → simulada via `X-User-ID`.
-- “Não retroceder sem bom motivo” → retrocesso via `PATCH status` com motivo; task fica no step atual com `pending_status_change` até aprovação do manager (persistido em `stepback_requests`).
-- Managers não executam trabalho alheio → bloqueio de `PATCH status` para managers.
-- E-mail de atribuição é **real** (SMTP); localmente via Mailpit. Cada envio é registrado em `assignment_notifications` para rastreabilidade.
+- The system is the **source of truth** for work items: who created them, who is responsible, and what stage they are in.
+- **Two roles**: manager (global view, creation, assignment) and worker (own queue, progress).
+- Authentication is external → simulated via `X-User-ID`.
+- “No step-back without a good reason” → step-back via `PATCH status` with a reason; the task stays at the current step with `pending_status_change` until manager approval (persisted in `stepback_requests`).
+- Managers do not execute others’ work → `PATCH status` blocked for managers.
+- Assignment email is **real** (SMTP); locally via Mailpit. Each send is recorded in `assignment_notifications` for traceability.
 
-### 2. Decisões de design importantes
+### 2. Important design decisions
 
-- **Workflow explícito** no domínio (`ForwardTransitions` / `BackwardTransitions`) — regras testáveis e centralizadas.
-- **Um arquivo por caso de uso** na camada `service/` — facilita navegação e testes focados.
-- **Erros tipados** (`AppError` com `code`) — cliente pode mapear para mensagens de UI.
-- **Interfaces no repository** — Postgres substituível; mocks para testes.
-- **Paginação** em listagens (`limit`/`offset`) — preparado para volume crescente.
+- **Explicit workflow** in the domain (`ForwardTransitions` / `BackwardTransitions`) — testable, centralized rules.
+- **One file per use case** in the `service/` layer — easier navigation and focused tests.
+- **Typed errors** (`AppError` with `code`) — clients can map to UI messages.
+- **Repository interfaces** — swappable Postgres; mocks for tests.
+- **Pagination** on listings (`limit`/`offset`) — ready for growing volume.
 
-### 3. Atribuições e notificações
+### 3. Assignments and notifications
 
-- Atribuição na criação (`assignee_id`) ou via `PATCH .../assign`.
-- Ao mudar o responsável, dispara SMTP para o e-mail do worker.
-- Falha de e-mail **não persiste** a atribuição silenciosamente — retorna `502 EMAIL_FAILED` (operação falha de forma clara).
-- Registro em `assignment_notifications` só após envio bem-sucedido.
+- Assignment on creation (`assignee_id`) or via `PATCH .../assign`.
+- When the assignee changes, SMTP is triggered to the worker’s email.
+- Email failure **does not** silently persist the assignment — returns `502 EMAIL_FAILED` (operation fails clearly).
+- Record in `assignment_notifications` only after successful delivery.
 
-### 4. Evolução com time/carga maiores
+### 4. Evolution with larger teams/load
 
-- Fila assíncrona para e-mails (SQS/RabbitMQ) e workers dedicados.
-- Cache de leitura (Redis) para listagens frequentes.
-- Índices compostos conforme padrões de query (ex.: `assignee_id + status`).
-- Eventos de domínio (`task.assigned`, `task.status_changed`) para integrações.
-- Auth real (JWT/OAuth2) no lugar do header.
-- Migrations versionadas com goose no boot; em produção rodariam em job separado da API.
+- Async queue for emails (SQS/RabbitMQ) and dedicated workers.
+- Read cache (Redis) for frequent listings.
+- Composite indexes based on query patterns (e.g. `assignee_id + status`).
+- Domain events (`task.assigned`, `task.status_changed`) for integrations.
+- Real auth (JWT/OAuth2) instead of the header.
+- Versioned migrations with goose on boot; in production they would run in a job separate from the API.
 
-### 5. Trade-offs do timebox
+### 5. Timebox trade-offs
 
-- Migrations aplicadas no startup via **goose** (versionadas, com rollback por arquivo).
-- Sem testes de integração com Postgres real (só unitários com mocks).
-- Sem endpoint separado para listar pendências globais do manager (visível via `GET /tasks` com `pending_status_change`).
-- Sem edição de título/descrição após criação.
-- Auth minimalista (header) — suficiente para o exercício.
-
-### 6. Antes de produção
-
-- Auth/OAuth integrado ao IdP da empresa.
-- Migrations versionadas e rollback.
-- Observabilidade (métricas, tracing, alertas de falha de e-mail).
-- Rate limiting e validação de input mais rígida.
-- Testes de integração e contrato (OpenAPI).
-- Secrets em vault; TLS; SMTP autenticado.
-- Idempotência em atribuições e retries na fila de e-mail.
-
+- Migrations applied on startup via **goose** (versioned, with per-file rollback).
+- No integration tests with real Postgres (unit tests with mocks only).
+- No separate endpoint to list all manager pending changes (visible via `GET /tasks` with `pending_status_change`).
+- No title/description editing after creation.
+- Minimal auth (header) — sufficient for the exercise.
 ---
 
-## Uso de IA
+## AI usage
 
-Ferramentas: **Cursor** (scaffolding, boilerplate, testes, README).
+Tools: **Cursor** (scaffolding, boilerplate, tests, README).
 
-- IA gerou estrutura inicial de pastas, handlers e SQL de migration.
-- Revisei manualmente: regras de workflow, autorização, tratamento de erros, fluxo de e-mail e testes.
-- Sem IA, eu gastaria mais tempo em boilerplate Gin/Postgres e documentação; o desenho de domínio (retrocesso integrado ao status, papéis, traceability) foi intencional.
+- AI generated the initial folder structure, handlers, and migration SQL.
+- I manually reviewed: workflow rules, authorization, error handling, email flow, and tests.
+- Without AI, I would have spent more time on Gin/Postgres boilerplate and documentation; the domain design (step-back integrated into status, roles, traceability) was intentional.
